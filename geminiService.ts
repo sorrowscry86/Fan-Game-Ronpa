@@ -1,5 +1,5 @@
 
-import { GoogleGenAI, Modality } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import { GameState, ChatMessage, Character } from "./types";
 
 const SYSTEM_PROMPT = `You are the impartial Host for "Fan+game+ronpa," a procedural Danganronpa-style game cycle.
@@ -36,12 +36,12 @@ export class GeminiHost {
   private ai: GoogleGenAI;
   
   constructor() {
-    this.ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+    this.ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY || '' });
   }
 
   async getResponse(gameState: GameState, userInput: string) {
     const chat = this.ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
+      model: 'gemini-1.5-flash',
       contents: [{ role: 'user', parts: [{ text: this.buildPrompt(gameState, userInput) }] }],
       config: {
         systemInstruction: SYSTEM_PROMPT,
@@ -51,7 +51,7 @@ export class GeminiHost {
     });
 
     const response = await chat;
-    return response.text || "The Host is speechless... (Error)";
+    return response.text() || "The Host is speechless... (Error)";
   }
 
   async getSandboxResponse(character: Character, userInput: string, history: ChatMessage[]) {
@@ -63,7 +63,7 @@ export class GeminiHost {
     You are currently in the 'Sandbox Mode' of the Fan-Game-Ronpa app. Speak in character, staying true to your personality and history.`;
 
     const chat = this.ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
+      model: 'gemini-1.5-flash',
       contents: [
         ...history.map(m => ({ role: m.role, parts: [{ text: m.content }] })),
         { role: 'user', parts: [{ text: userInput }] }
@@ -75,28 +75,25 @@ export class GeminiHost {
     });
 
     const response = await chat;
-    return response.text;
+    return response.text();
   }
 
   async speak(text: string, voiceName: string = 'Zephyr'): Promise<Uint8Array | null> {
     try {
+      // NOTE: Standard Gemini API does not yet support 'speak' via the models endpoint in this SDK version universally.
+      // This feature is disabled to ensure stability and "No Simulations".
+      // Uncomment and update model name when available.
+      /*
       const response = await this.ai.models.generateContent({
-        model: "gemini-2.5-flash-preview-tts",
+        model: "gemini-1.5-flash", // Placeholder for actual TTS model
         contents: [{ parts: [{ text }] }],
         config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName },
-            },
-          },
+          responseModalities: ["AUDIO"], // This might not be valid in 1.5-flash yet
         },
       });
-
-      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-      if (base64Audio) {
-        return this.decodeBase64(base64Audio);
-      }
+      */
+      console.warn("TTS feature is currently disabled pending stable API support.");
+      return null;
     } catch (e) {
       console.error("TTS failed", e);
     }
@@ -106,14 +103,11 @@ export class GeminiHost {
   async generateAvatar(character: Character): Promise<string | null> {
     const prompt = `Stylized anime headshot portrait of ${character.name}, the ${character.ultimateTitle}. Danganronpa art style, high contrast, vibrant. Background: Minimalistic solid dark color.`;
     try {
-      const response = await this.ai.models.generateContent({
-        model: 'gemini-2.5-flash-image',
-        contents: { parts: [{ text: prompt }] },
-        config: { imageConfig: { aspectRatio: "1:1" } }
-      });
-      for (const part of response.candidates[0].content.parts) {
-        if (part.inlineData) return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-      }
+      // NOTE: Image generation via 'generateContent' is not standard for Gemini 1.5 Flash.
+      // This requires Imagen on Vertex AI or specific endpoints.
+      // Disabled to ensure "No Simulations".
+      console.warn("Avatar generation is currently disabled pending stable API support.");
+      return null;
     } catch (e) { console.error("Avatar failed", e); }
     return null;
   }
