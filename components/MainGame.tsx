@@ -1,24 +1,12 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { GameState, GamePhase, ChatMessage, Character, GameMode, MatchHistory } from '../types';
-import { GeminiHost } from '../geminiService';
+import { GeminiHost, RateLimitError } from '../geminiService';
+import { createAudioContext, decodeAudioData } from '../utils/audio';
 
 interface MainGameProps {
   initialState: GameState;
   onRestart: () => void;
-}
-
-async function decodeAudioData(data: Uint8Array, ctx: AudioContext, sampleRate: number, numChannels: number): Promise<AudioBuffer> {
-  const dataInt16 = new Int16Array(data.buffer);
-  const frameCount = dataInt16.length / numChannels;
-  const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
-  for (let channel = 0; channel < numChannels; channel++) {
-    const channelData = buffer.getChannelData(channel);
-    for (let i = 0; i < frameCount; i++) {
-      channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
-    }
-  }
-  return buffer;
 }
 
 const CharacterModal: React.FC<{ character: Character; onClose: () => void }> = ({ character, onClose }) => {
@@ -82,6 +70,7 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
   const [isMuted, setIsMuted] = useState(false);
   const [selectedCharacter, setSelectedCharacter] = useState<Character | null>(null);
   const [isGeneratingAvatars, setIsGeneratingAvatars] = useState(false);
+  const [errorState, setErrorState] = useState<{ type: 'RATE_LIMIT' | 'GENERAL', message: string } | null>(null);
   
   const [isAutoOn, setIsAutoOn] = useState(false);
   const autoCountRef = useRef(0);
@@ -109,7 +98,7 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
 
   // Auto Mode Loop Logic
   useEffect(() => {
-    if (isAutoOn && !isTyping && autoCountRef.current < 5) {
+    if (isAutoOn && !isTyping && !errorState && autoCountRef.current < 5) {
       const lastMsg = gameState.messages[gameState.messages.length - 1];
       const needsDecision = lastMsg?.role === 'model' && (
         lastMsg.content.trim().endsWith('?') || 
@@ -125,11 +114,11 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
           handleContinue();
         }, 2000 + Math.random() * 500);
       }
-    } else if (autoCountRef.current >= 5) {
+    } else if (autoCountRef.current >= 5 || errorState) {
       setIsAutoOn(false);
       autoCountRef.current = 0;
     }
-  }, [isAutoOn, isTyping, gameState.messages]);
+  }, [isAutoOn, isTyping, gameState.messages, errorState]);
 
   const autoSave = () => {
     localStorage.setItem('dr_current_session', JSON.stringify(gameState));
@@ -140,10 +129,11 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
 
   const handleInitialPrompt = async () => {
     setIsTyping(true);
+    setErrorState(null);
     try {
       const response = await host.current.getResponse(gameState, `Initialize the game for the cycle: ${gameState.title}. Reveal the full cast and assign Titles.`);
       await processResponse(response);
-    } catch (err) { console.error(err); }
+    } catch (err) { handleHostError(err); }
     finally { setIsTyping(false); }
   };
 
@@ -163,7 +153,7 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
     if (isMuted) return;
     const audioData = await host.current.speak(text);
     if (audioData) {
-      if (!audioContext.current) audioContext.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+      if (!audioContext.current) audioContext.current = createAudioContext();
       const buffer = await decodeAudioData(audioData, audioContext.current, 24000, 1);
       const source = audioContext.current.createBufferSource();
       source.buffer = buffer;
@@ -230,15 +220,35 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
     }
 
     setIsTyping(true);
+    setErrorState(null);
     try {
       const response = await host.current.getResponse(gameState, value || "Continue the story.");
       await processResponse(response);
-    } catch (err) { console.error(err); }
+    } catch (err) { handleHostError(err); }
     finally { setIsTyping(false); }
   };
 
   const handleContinue = () => {
     handleSubmit(undefined, "Continue the story.");
+  };
+
+  const handleHostError = (err: any) => {
+    console.error("Host Error:", err);
+    if (err instanceof RateLimitError) {
+       setErrorState({ type: 'RATE_LIMIT', message: "The Host is contemplating eternity. (Rate Limit Exceeded)" });
+    } else {
+       setErrorState({ type: 'GENERAL', message: "The connection to the Void has been severed." });
+    }
+  };
+
+  const handleRetry = () => {
+    setErrorState(null);
+    if (gameState.messages.length === 0) {
+      handleInitialPrompt();
+    } else {
+      // Retry last user message or continue
+      handleContinue();
+    }
   };
 
   return (
@@ -248,7 +258,7 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
         <div className="bg-dr-card p-4 rounded-xl border border-white/10 shadow-lg">
           <div className="flex justify-between items-center mb-3">
              <h2 className="text-xl font-black text-dr-pink uppercase italic">Status</h2>
-             <button onClick={() => setIsMuted(!isMuted)} className={`p-1 transition-colors ${isMuted ? 'text-white/20' : 'text-dr-pink'}`}>
+             <button aria-label={isMuted ? "Unmute" : "Mute"} onClick={() => setIsMuted(!isMuted)} className={`p-1 transition-colors ${isMuted ? 'text-white/20' : 'text-dr-pink'}`}>
                {isMuted ? <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg> : <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>}
              </button>
           </div>
@@ -315,6 +325,21 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
               </div>
             </div>
           )}
+          {errorState && (
+            <div className="flex justify-center my-4 animate-in fade-in slide-in-from-bottom-2">
+              <div className="bg-dr-dark border-2 border-dr-pink/50 rounded-xl p-6 text-center shadow-[0_0_20px_rgba(255,0,127,0.2)] max-w-md">
+                <div className="text-dr-pink text-3xl mb-2 animate-pulse">⚠</div>
+                <h3 className="text-lg font-black uppercase italic mb-2">{errorState.message}</h3>
+                {errorState.type === 'RATE_LIMIT' && <p className="text-xs opacity-60 mb-4">The free tier mana pool is temporarily drained. Wait a moment.</p>}
+                <button
+                  onClick={handleRetry}
+                  className="bg-dr-pink text-white px-6 py-2 rounded-lg font-bold uppercase tracking-widest hover:bg-dr-pink/80 transition-all shadow-lg active:scale-95"
+                >
+                  Pray to the Host (Retry)
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Input & Controls */}
@@ -322,14 +347,14 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
           <div className="flex flex-wrap items-center gap-4 px-2">
              <div className="flex items-center gap-2">
                 <label className="relative inline-flex items-center cursor-pointer">
-                  <input type="checkbox" className="sr-only peer" checked={isAutoOn} onChange={(e) => { setIsAutoOn(e.target.checked); autoCountRef.current = 0; }} />
+                  <input type="checkbox" className="sr-only peer" checked={isAutoOn} onChange={(e) => { setIsAutoOn(e.target.checked); autoCountRef.current = 0; }} disabled={!!errorState} />
                   <div className="w-9 h-5 bg-white/10 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-dr-pink"></div>
                   <span className="ml-3 text-[10px] font-black uppercase tracking-widest text-white/50">Auto Mode</span>
                 </label>
              </div>
              
              {gameState.mode === GameMode.WATCH && (
-               <button onClick={handleContinue} disabled={isTyping} className="text-[10px] font-black uppercase tracking-widest text-dr-pink border border-dr-pink/30 hover:bg-dr-pink hover:text-white px-3 py-1.5 rounded-lg transition-all disabled:opacity-30">
+               <button onClick={handleContinue} disabled={isTyping || !!errorState} className="text-[10px] font-black uppercase tracking-widest text-dr-pink border border-dr-pink/30 hover:bg-dr-pink hover:text-white px-3 py-1.5 rounded-lg transition-all disabled:opacity-30">
                  Continue Story
                </button>
              )}
@@ -338,8 +363,8 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
           </div>
 
           <form onSubmit={handleSubmit} className="flex gap-3">
-            <input type="text" value={inputValue} onChange={(e) => setInputValue(e.target.value)} disabled={isTyping} placeholder={isTyping ? "Awaiting host..." : "Enter your choice..."} className="flex-1 bg-dr-card border border-white/10 rounded-xl px-5 py-4 focus:ring-2 focus:ring-dr-pink outline-none transition-all disabled:opacity-50 text-sm placeholder:opacity-30" />
-            <button type="submit" disabled={isTyping || !inputValue.trim()} className="bg-dr-pink text-white px-8 py-4 rounded-xl font-black uppercase tracking-widest hover:bg-dr-pink/80 transition-all disabled:opacity-50 shadow-lg shadow-dr-pink/20">PROCEED</button>
+            <input type="text" value={inputValue} onChange={(e) => setInputValue(e.target.value)} disabled={isTyping || !!errorState} placeholder={isTyping ? "Awaiting host..." : "Enter your choice..."} className="flex-1 bg-dr-card border border-white/10 rounded-xl px-5 py-4 focus:ring-2 focus:ring-dr-pink outline-none transition-all disabled:opacity-50 text-sm placeholder:opacity-30" />
+            <button type="submit" disabled={isTyping || !inputValue.trim() || !!errorState} className="bg-dr-pink text-white px-8 py-4 rounded-xl font-black uppercase tracking-widest hover:bg-dr-pink/80 transition-all disabled:opacity-50 shadow-lg shadow-dr-pink/20">PROCEED</button>
           </form>
         </div>
       </div>
