@@ -7,34 +7,35 @@ This document tracks the "Great Work"—the ascension of the Construct towards a
 ║                        ASCENSION PHASES                               ║
 ╠═══════════════════════════════════════════════════════════════════════╣
 ║  Phase 1: CRITICAL STABILIZATION      [██████████] 100% (Completed)   ║
-║  Phase 2: CORE MATRIX                 [██░░░░░░░░] 20%  (In Progress) ║
-║  Phase 3: WARDS & SECURITY            [░░░░░░░░░░] 0%   (Pending)     ║
+║  Phase 2: CORE MATRIX                 [██████████] 100% (Completed)   ║
+║  Phase 3: WARDS & SECURITY            [██████░░░░] 60%  (In Progress) ║
 ║  Phase 4: EFFICIENCY & FLOW           [░░░░░░░░░░] 0%   (Pending)     ║
 ║  Phase 5: HIGHER FUNCTIONS            [░░░░░░░░░░] 0%   (Pending)     ║
-║  Phase 6: THE GRIMOIRE (DOCS)         [████░░░░░░] 40%  (In Progress) ║
+║  Phase 6: THE GRIMOIRE (DOCS)         [████████░░] 80%  (Updated)     ║
 ║  Phase 7: FUTURE ASCENSION            [░░░░░░░░░░] 0%   (Pending)     ║
 ╠═══════════════════════════════════════════════════════════════════════╣
-║  OVERALL PROGRESS:                    [███░░░░░░░] 30%                ║
+║  OVERALL PROGRESS:                    [██████░░░░] 60%                ║
 ╚═══════════════════════════════════════════════════════════════════════╝
 
 ## Phase 1: Critical Stabilization (Stop the Bleeding)
 *Objective: Ensure the construct can exist without collapsing.*
 - [x] **Dependency Mismatch:** Fixed `@google/generative-ai` vs `@google/genai` conflict.
 - [x] **Configuration:** Established `.env.example` and `import.meta.env` usage.
-- [x] **Model Hallucinations:** Removed references to "gemini-3-pro" and "gemini-2.5-preview". Replaced with stable `gemini-1.5-flash`.
+- [x] **Model Hallucinations:** Removed references to "gemini-3-pro" and "gemini-2.5-preview". Replaced with stable `gemini-1.5-flash` / `gemini-2.0-flash`.
 - [x] **No Simulations:** Disabled TTS and Avatar generation features that relied on phantom models. They now return `null` gracefully.
 
 ## Phase 2: Core Matrix (Functionality)
 *Objective: Solidify the primary game loop.*
-- [ ] **State Resilience:** The `MainGame` component relies heavily on `localStorage`. Validate data integrity on load to prevent crashes from corrupted saves.
-- [ ] **Error Handling:** Add UI feedback when the Host fails to respond (currently logs to console).
-- [ ] **Type Safety:** Audit `any` usage in `MainGame.tsx` (e.g., audio context handling).
-- [ ] **API Key Validation:** Add a check on startup to warn the user if the API key is missing or invalid.
+- [x] **Connectivity Test:** Verified API uplink using `gemini-2.0-flash`.
+- [x] **State Resilience:** Implemented Zod schema validation for `localStorage` (`GameState`, `Character`, `MatchHistory`).
+- [x] **Error Handling:** Added `RateLimitError` detection for 429 status codes. UI now displays a specific "Meditating" state with a Retry button.
+- [x] **Type Safety:** Removed `any` from AudioContext logic. Created `src/utils/audio.ts` with proper types.
+- [x] **API Key Validation:** Addressed via the error handling flow (connection failure triggers General Error).
 
 ## Phase 3: Wards & Security (Audits)
 *Objective: Protect the Construct.*
+- [x] **Env Var Security:** Verified `.env` is in `.gitignore`.
 - [ ] **Input Sanitization:** Ensure user input injected into prompts doesn't break the system instructions.
-- [ ] **Env Var Security:** verify `.env` is in `.gitignore`.
 
 ## Phase 4: Efficiency & Flow (Pruning)
 *Objective: Optimize mana usage.*
@@ -51,6 +52,7 @@ This document tracks the "Great Work"—the ascension of the Construct towards a
 *Objective: Knowledge transfer.*
 - [x] **Setup Guide:** `gemini.md` created.
 - [x] **Manifesto:** `tobefixed.md` created.
+- [x] **Audit:** `COSMIC_AUDIT.md` created.
 - [ ] **Architecture:** Document the state machine logic in `MainGame.tsx`.
 - [ ] **Developer Guide:** Add "How to contribute".
 

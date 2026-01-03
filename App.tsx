@@ -5,6 +5,7 @@ import MainGame from './components/MainGame';
 import Gallery from './components/Gallery';
 import Sandbox from './components/Sandbox';
 import { GameState, GamePhase, GameMode, SaveSlot } from './types';
+import { SaveSlotsMapSchema } from './schemas';
 
 const App: React.FC = () => {
   const [gameState, setGameState] = useState<GameState | null>(null);
@@ -12,9 +13,22 @@ const App: React.FC = () => {
   const [slots, setSlots] = useState<SaveSlot[]>([]);
 
   useEffect(() => {
-    const slotsRaw = localStorage.getItem('dr_save_slots') || '{}';
-    const parsed = JSON.parse(slotsRaw);
-    setSlots(Object.values(parsed));
+    try {
+      const slotsRaw = localStorage.getItem('dr_save_slots') || '{}';
+      const parsed = JSON.parse(slotsRaw);
+
+      // Validation with Zod
+      const result = SaveSlotsMapSchema.safeParse(parsed);
+
+      if (result.success) {
+        setSlots(Object.values(result.data));
+      } else {
+        console.error("Save slots corruption detected:", result.error);
+        // Optional: Show toast or recover logic
+      }
+    } catch (e) {
+      console.error("Failed to parse save slots", e);
+    }
   }, [view, gameState]);
 
   const handleSetupComplete = (setupData: Partial<GameState>) => {
@@ -41,10 +55,16 @@ const App: React.FC = () => {
   const handleDeleteSlot = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (confirm("Delete this death game record?")) {
-      const slots = JSON.parse(localStorage.getItem('dr_save_slots') || '{}');
-      delete slots[id];
-      localStorage.setItem('dr_save_slots', JSON.stringify(slots));
-      setSlots(Object.values(slots));
+      try {
+        const slotsRaw = localStorage.getItem('dr_save_slots') || '{}';
+        const slots = JSON.parse(slotsRaw);
+        delete slots[id];
+        localStorage.setItem('dr_save_slots', JSON.stringify(slots));
+        // Force refresh
+        setSlots(Object.values(slots));
+      } catch (e) {
+        console.error("Failed to delete slot", e);
+      }
     }
   };
 

@@ -2,6 +2,14 @@
 import { GoogleGenAI } from "@google/genai";
 import { GameState, ChatMessage, Character } from "./types";
 
+// Custom Error Class for Rate Limits
+export class RateLimitError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RateLimitError";
+  }
+}
+
 const SYSTEM_PROMPT = `You are the impartial Host for "Fan+game+ronpa," a procedural Danganronpa-style game cycle.
 
 1) GAME SETUP & ULTIMATE TITLES
@@ -35,23 +43,28 @@ Example:
 export class GeminiHost {
   private ai: GoogleGenAI;
   
-  constructor() {
-    this.ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY || '' });
+  constructor(apiKey?: string) {
+    this.ai = new GoogleGenAI({ apiKey: apiKey || import.meta.env.VITE_GEMINI_API_KEY || '' });
   }
 
   async getResponse(gameState: GameState, userInput: string) {
-    const chat = this.ai.models.generateContent({
-      model: 'gemini-1.5-flash',
-      contents: [{ role: 'user', parts: [{ text: this.buildPrompt(gameState, userInput) }] }],
-      config: {
-        systemInstruction: SYSTEM_PROMPT,
-        temperature: 0.8,
-        topP: 0.95,
-      }
-    });
+    try {
+      const chat = this.ai.models.generateContent({
+        model: 'gemini-2.0-flash',
+        contents: [{ role: 'user', parts: [{ text: this.buildPrompt(gameState, userInput) }] }],
+        config: {
+          systemInstruction: SYSTEM_PROMPT,
+          temperature: 0.8,
+          topP: 0.95,
+        }
+      });
 
-    const response = await chat;
-    return response.text() || "The Host is speechless... (Error)";
+      const response = await chat;
+      return response.text() || "The Host is speechless... (Error)";
+    } catch (e: any) {
+      this.handleError(e);
+      return "Error"; // Should be unreachable due to throw
+    }
   }
 
   async getSandboxResponse(character: Character, userInput: string, history: ChatMessage[]) {
@@ -62,20 +75,25 @@ export class GeminiHost {
     
     You are currently in the 'Sandbox Mode' of the Fan-Game-Ronpa app. Speak in character, staying true to your personality and history.`;
 
-    const chat = this.ai.models.generateContent({
-      model: 'gemini-1.5-flash',
-      contents: [
-        ...history.map(m => ({ role: m.role, parts: [{ text: m.content }] })),
-        { role: 'user', parts: [{ text: userInput }] }
-      ],
-      config: {
-        systemInstruction: personaPrompt,
-        temperature: 0.9,
-      }
-    });
+    try {
+      const chat = this.ai.models.generateContent({
+        model: 'gemini-2.0-flash',
+        contents: [
+          ...history.map(m => ({ role: m.role, parts: [{ text: m.content }] })),
+          { role: 'user', parts: [{ text: userInput }] }
+        ],
+        config: {
+          systemInstruction: personaPrompt,
+          temperature: 0.9,
+        }
+      });
 
-    const response = await chat;
-    return response.text();
+      const response = await chat;
+      return response.text();
+    } catch (e: any) {
+      this.handleError(e);
+      return "Error";
+    }
   }
 
   async speak(text: string, voiceName: string = 'Zephyr'): Promise<Uint8Array | null> {
@@ -85,10 +103,10 @@ export class GeminiHost {
       // Uncomment and update model name when available.
       /*
       const response = await this.ai.models.generateContent({
-        model: "gemini-1.5-flash", // Placeholder for actual TTS model
+        model: "gemini-2.0-flash", // Placeholder for actual TTS model
         contents: [{ parts: [{ text }] }],
         config: {
-          responseModalities: ["AUDIO"], // This might not be valid in 1.5-flash yet
+          responseModalities: ["AUDIO"], // This might not be valid in 2.0-flash yet
         },
       });
       */
@@ -103,13 +121,21 @@ export class GeminiHost {
   async generateAvatar(character: Character): Promise<string | null> {
     const prompt = `Stylized anime headshot portrait of ${character.name}, the ${character.ultimateTitle}. Danganronpa art style, high contrast, vibrant. Background: Minimalistic solid dark color.`;
     try {
-      // NOTE: Image generation via 'generateContent' is not standard for Gemini 1.5 Flash.
+      // NOTE: Image generation via 'generateContent' is not standard for Gemini 2.0 Flash.
       // This requires Imagen on Vertex AI or specific endpoints.
       // Disabled to ensure "No Simulations".
       console.warn("Avatar generation is currently disabled pending stable API support.");
       return null;
     } catch (e) { console.error("Avatar failed", e); }
     return null;
+  }
+
+  private handleError(e: any) {
+    // Check for 429 status or specific error code/message for rate limiting
+    if (e?.status === 429 || e?.response?.status === 429 || (e?.message && e.message.includes("429"))) {
+      throw new RateLimitError("Gemini API Quota Exceeded");
+    }
+    throw e;
   }
 
   private decodeBase64(base64: string): Uint8Array {

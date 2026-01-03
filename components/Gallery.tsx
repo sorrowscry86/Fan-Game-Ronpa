@@ -1,6 +1,8 @@
 
 import React from 'react';
 import { Character } from '../types';
+import { CharacterSchema } from '../schemas';
+import { z } from 'zod';
 
 interface GalleryProps {
   onBack: () => void;
@@ -10,8 +12,20 @@ const Gallery: React.FC<GalleryProps> = ({ onBack }) => {
   const [gallery, setGallery] = React.useState<Character[]>([]);
 
   React.useEffect(() => {
-    const saved = localStorage.getItem('dr_gallery');
-    if (saved) setGallery(JSON.parse(saved));
+    try {
+      const saved = localStorage.getItem('dr_gallery');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const result = z.array(CharacterSchema).safeParse(parsed);
+        if (result.success) {
+          setGallery(result.data);
+        } else {
+          console.error("Gallery corruption:", result.error);
+        }
+      }
+    } catch (e) {
+      console.error("Gallery parse error:", e);
+    }
   }, []);
 
   return (
