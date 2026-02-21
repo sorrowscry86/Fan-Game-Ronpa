@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Character, ChatMessage } from '../types';
-import { GeminiHost } from '../geminiService';
+import { OpenRouterHost } from '../openrouterService';
 
 interface SandboxProps {
   onBack: () => void;
@@ -14,7 +14,7 @@ const Sandbox: React.FC<SandboxProps> = ({ onBack }) => {
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const host = useRef(new GeminiHost());
+  const host = useRef(new OpenRouterHost());
 
   useEffect(() => {
     const saved = localStorage.getItem('dr_gallery');
