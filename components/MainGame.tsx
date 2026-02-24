@@ -112,23 +112,36 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
     galleryLoadedRef.current = true;
   };
 
-  const persistGalleryCharacter = (character: Character, options?: { updateOnly?: boolean }): boolean => {
-    ensureGalleryLoaded();
-    const updateOnly = options?.updateOnly ?? false;
-    const gallery = [...galleryRef.current];
+  const writeGallery = (gallery: Character[]) => {
+    localStorage.setItem('dr_gallery', JSON.stringify(gallery));
+    galleryRef.current = gallery;
+  };
+
+  const bumpSavedIds = (ids: Iterable<string>) => {
+    setSavedIds(prev => {
+      const next = new Set(prev);
+      for (const id of ids) next.add(id);
+      return next;
+    });
+  };
+
+  const upsertGalleryEntry = (gallery: Character[], character: Character, updateOnly: boolean) => {
     const idx = gallery.findIndex((g) => g.id === character.id);
-    if (idx === -1 && updateOnly) return false;
+    if (idx === -1 && updateOnly) return null;
     const history = idx > -1 ? gallery[idx].history || [] : [];
     const payload = { ...character, history };
     if (idx > -1) gallery[idx] = payload;
     else gallery.push(payload);
-    localStorage.setItem('dr_gallery', JSON.stringify(gallery));
-    galleryRef.current = gallery;
-    setSavedIds(prev => {
-      const next = new Set(prev);
-      next.add(character.id);
-      return next;
-    });
+    return gallery;
+  };
+
+  const persistGalleryCharacter = (character: Character, options?: { updateOnly?: boolean }): boolean => {
+    ensureGalleryLoaded();
+    const updateOnly = options?.updateOnly ?? false;
+    const gallery = upsertGalleryEntry([...galleryRef.current], character, updateOnly);
+    if (!gallery) return false;
+    writeGallery(gallery);
+    bumpSavedIds([character.id]);
     return true;
   };
 
@@ -248,19 +261,13 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
           // Update persistent gallery too
           ensureGalleryLoaded();
           const gallery: Character[] = [...galleryRef.current];
-          const galleryMap = new Map(gallery.map((g) => [g.id, g]));
+          const newIds: string[] = [];
           updatedCharacters.forEach((uc) => {
-            const existing = galleryMap.get(uc.id);
-            galleryMap.set(uc.id, { ...(existing || uc), ...uc, history: existing?.history || [] });
-            setSavedIds(prev => {
-              const next = new Set(prev);
-              next.add(uc.id);
-              return next;
-            });
+            const updated = upsertGalleryEntry(gallery, uc, false);
+            if (updated) newIds.push(uc.id);
           });
-          const updatedGallery = Array.from(galleryMap.values());
-          localStorage.setItem('dr_gallery', JSON.stringify(updatedGallery));
-          galleryRef.current = updatedGallery;
+          writeGallery(gallery);
+          if (newIds.length) bumpSavedIds(newIds);
         }
       } catch (e) { console.error("Failed to parse character update", e); }
     }
