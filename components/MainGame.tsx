@@ -125,14 +125,19 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
     });
   };
 
-  const upsertGalleryEntry = (gallery: Character[], character: Character, updateOnly: boolean) => {
+  const upsertGalleryEntry = (
+    gallery: Character[],
+    character: Character,
+    updateOnly: boolean
+  ): { gallery: Character[]; added: boolean } | null => {
     const idx = gallery.findIndex((g) => g.id === character.id);
     if (idx === -1 && updateOnly) return null;
     const history = idx > -1 ? gallery[idx].history || [] : [];
     const payload = { ...character, history };
-    if (idx > -1) gallery[idx] = payload;
-    else gallery.push(payload);
-    return gallery;
+    if (idx > -1) {
+      return { gallery: gallery.map((g, i) => (i === idx ? payload : g)), added: false };
+    }
+    return { gallery: [...gallery, payload], added: true };
   };
 
   const persistGalleryCharacter = (character: Character, options?: { updateOnly?: boolean }): boolean => {
@@ -140,8 +145,8 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
     const updateOnly = options?.updateOnly ?? false;
     const gallery = upsertGalleryEntry([...galleryRef.current], character, updateOnly);
     if (!gallery) return false;
-    writeGallery(gallery);
-    bumpSavedIds([character.id]);
+    writeGallery(gallery.gallery);
+    if (gallery.added) bumpSavedIds([character.id]);
     return true;
   };
 
@@ -260,11 +265,14 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
           });
           // Update persistent gallery too
           ensureGalleryLoaded();
-          const gallery: Character[] = [...galleryRef.current];
+          let gallery: Character[] = [...galleryRef.current];
           const newIds: string[] = [];
           updatedCharacters.forEach((uc) => {
-            const updated = upsertGalleryEntry(gallery, uc, false);
-            if (updated) newIds.push(uc.id);
+            const result = upsertGalleryEntry(gallery, uc, false);
+            if (result) {
+              gallery = result.gallery;
+              if (result.added) newIds.push(uc.id);
+            }
           });
           writeGallery(gallery);
           if (newIds.length) bumpSavedIds(newIds);
