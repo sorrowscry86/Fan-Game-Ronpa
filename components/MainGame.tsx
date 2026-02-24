@@ -97,9 +97,10 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
     }
   };
 
-  const persistGalleryCharacter = (character: Character, onlyIfExists = false): boolean => {
+  const persistGalleryCharacter = (character: Character, options?: { onlyIfExists?: boolean }): boolean => {
+    const onlyIfExists = options?.onlyIfExists ?? false;
     const gallery = readGallery();
-    const idx = gallery.findIndex((g) => g.name === character.name);
+    const idx = gallery.findIndex((g) => g.id === character.id || g.name === character.name);
     if (idx === -1 && onlyIfExists) return false;
     const history = idx > -1 ? gallery[idx].history || [] : [];
     const payload = { ...character, history };
@@ -111,7 +112,7 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
 
   const isCharacterSaved = (character: Character | null) => {
     if (!character) return false;
-    return lastSavedId === character.id || readGallery().some((g) => g.name === character.name);
+    return lastSavedId === character.id || readGallery().some((g) => g.id === character.id || g.name === character.name);
   };
 
   useEffect(() => {
@@ -185,7 +186,7 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
     const url = await host.current.generateAvatar(character);
     if (url) {
       const withAvatar = { ...character, avatarUrl: url };
-      persistGalleryCharacter(withAvatar, true);
+      persistGalleryCharacter(withAvatar, { onlyIfExists: true });
       setGameState(prev => ({
         ...prev,
         characters: prev.characters.map(c => c.id === character.id ? { ...c, avatarUrl: url } : c)
