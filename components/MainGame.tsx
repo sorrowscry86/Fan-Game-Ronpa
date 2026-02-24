@@ -44,7 +44,7 @@ const CharacterModal: React.FC<{ character: Character; onClose: () => void; onSa
               disabled={isSaved}
               aria-disabled={isSaved}
               aria-label={isSaved ? 'Profile saved to archive' : 'Save profile to archive'}
-              className={`ml-2 px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-[0.2em] border-2 transition-all ${isSaved ? 'bg-white text-dr-pink border-white cursor-default' : 'bg-dr-dark/40 text-white border-white/40 hover:bg-white hover:text-dr-pink'}`}
+              className={`ml-2 px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-[0.2em] border-2 transition-all ${isSaved ? 'bg-white text-dr-pink border-white cursor-not-allowed' : 'bg-dr-dark/40 text-white border-white/40 hover:bg-white hover:text-dr-pink'}`}
             >
               {isSaved ? '✓ Saved' : 'Save Profile'}
             </button>
@@ -243,14 +243,15 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
           // Update persistent gallery too
           ensureGalleryLoaded();
           const gallery: Character[] = [...galleryRef.current];
-          updatedCharacters.forEach(uc => {
-            const idx = gallery.findIndex((g: Character) => g.id === uc.id);
-            if (idx > -1) gallery[idx] = { ...gallery[idx], ...uc, history: gallery[idx].history || [] };
-            else gallery.push({ ...uc, history: [] });
+          const galleryMap = new Map(gallery.map((g) => [g.id, g]));
+          updatedCharacters.forEach((uc) => {
+            const existing = galleryMap.get(uc.id);
+            galleryMap.set(uc.id, { ...(existing || uc), ...uc, history: existing?.history || [] });
+            savedIdsRef.current.add(uc.id);
           });
-          localStorage.setItem('dr_gallery', JSON.stringify(gallery));
-          galleryRef.current = gallery;
-          savedIdsRef.current = new Set(gallery.map((g) => g.id));
+          const updatedGallery = Array.from(galleryMap.values());
+          localStorage.setItem('dr_gallery', JSON.stringify(updatedGallery));
+          galleryRef.current = updatedGallery;
         }
       } catch (e) { console.error("Failed to parse character update", e); }
     }
