@@ -45,7 +45,7 @@ const CharacterModal: React.FC<{ character: Character; onClose: () => void; onSa
               aria-label={isSaved ? 'Profile saved to archive' : 'Save profile to archive'}
               className={`ml-2 px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-[0.2em] border-2 transition-all ${isSaved ? 'bg-white text-dr-pink border-white' : 'bg-dr-dark/40 text-white border-white/40 hover:bg-white hover:text-dr-pink'}`}
             >
-              {isSaved ? 'Saved' : 'Save Profile'}
+              {isSaved ? '✓ Saved' : 'Save Profile'}
             </button>
           )}
         </div>
@@ -226,9 +226,9 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
             return ex?.avatarUrl ? { ...nc, avatarUrl: ex.avatarUrl } : nc;
           });
           // Update persistent gallery too
-          const gallery = galleryRef.current.length ? [...galleryRef.current] : readGallery();
+          const gallery: Character[] = galleryRef.current.length ? [...galleryRef.current] : readGallery();
           updatedCharacters.forEach(uc => {
-            const idx = gallery.findIndex((g: any) => g.id === uc.id);
+            const idx = gallery.findIndex((g: Character) => g.id === uc.id);
             if (idx > -1) gallery[idx] = { ...gallery[idx], ...uc, history: gallery[idx].history || [] };
             else gallery.push({ ...uc, history: [] });
           });
