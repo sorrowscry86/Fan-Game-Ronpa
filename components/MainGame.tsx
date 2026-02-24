@@ -99,7 +99,8 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
   const readGallery = (): Character[] => {
     try {
       return JSON.parse(localStorage.getItem('dr_gallery') || '[]');
-    } catch {
+    } catch (err) {
+      console.error('Failed to read gallery from storage', err);
       return [];
     }
   };
@@ -128,10 +129,10 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
   const upsertGalleryEntry = (
     gallery: Character[],
     character: Character,
-    updateOnly: boolean
+    allowInsert: boolean
   ): { gallery: Character[]; added: boolean } | null => {
     const idx = gallery.findIndex((g) => g.id === character.id);
-    if (idx === -1 && updateOnly) return null;
+    if (idx === -1 && !allowInsert) return null;
     const history = idx > -1 ? gallery[idx].history || [] : [];
     const payload = { ...character, history };
     if (idx > -1) {
@@ -140,10 +141,10 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
     return { gallery: [...gallery, payload], added: true };
   };
 
-  const persistGalleryCharacter = (character: Character, options?: { updateOnly?: boolean }): boolean => {
+  const persistGalleryCharacter = (character: Character, options?: { allowInsert?: boolean }): boolean => {
     ensureGalleryLoaded();
-    const updateOnly = options?.updateOnly ?? false;
-    const gallery = upsertGalleryEntry([...galleryRef.current], character, updateOnly);
+    const allowInsert = options?.allowInsert ?? true;
+    const gallery = upsertGalleryEntry([...galleryRef.current], character, allowInsert);
     if (!gallery) return false;
     writeGallery(gallery.gallery);
     if (gallery.added) bumpSavedIds([character.id]);
@@ -227,7 +228,8 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
     const url = await host.current.generateAvatar(character);
     if (url) {
       const withAvatar = { ...character, avatarUrl: url };
-      persistGalleryCharacter(withAvatar, { updateOnly: true });
+      const persisted = persistGalleryCharacter(withAvatar, { allowInsert: false });
+      if (!persisted) console.warn('Avatar generated but gallery entry missing for', character.id);
       setGameState(prev => ({
         ...prev,
         characters: prev.characters.map(c => c.id === character.id ? { ...c, avatarUrl: url } : c)
@@ -268,7 +270,7 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
           let gallery: Character[] = [...galleryRef.current];
           const newIds: string[] = [];
           updatedCharacters.forEach((uc) => {
-            const result = upsertGalleryEntry(gallery, uc, false);
+            const result = upsertGalleryEntry(gallery, uc, true);
             if (result) {
               gallery = result.gallery;
               if (result.added) newIds.push(uc.id);
