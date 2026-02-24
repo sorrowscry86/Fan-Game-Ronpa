@@ -1,24 +1,11 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { GameState, GamePhase, ChatMessage, Character, GameMode, MatchHistory } from '../types';
-import { GeminiHost } from '../geminiService';
+import { OpenRouterHost } from '../openrouterService';
 
 interface MainGameProps {
   initialState: GameState;
   onRestart: () => void;
-}
-
-async function decodeAudioData(data: Uint8Array, ctx: AudioContext, sampleRate: number, numChannels: number): Promise<AudioBuffer> {
-  const dataInt16 = new Int16Array(data.buffer);
-  const frameCount = dataInt16.length / numChannels;
-  const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
-  for (let channel = 0; channel < numChannels; channel++) {
-    const channelData = buffer.getChannelData(channel);
-    for (let i = 0; i < frameCount; i++) {
-      channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
-    }
-  }
-  return buffer;
 }
 
 const CharacterModal: React.FC<{ character: Character; onClose: () => void }> = ({ character, onClose }) => {
@@ -82,14 +69,14 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
   const [isMuted, setIsMuted] = useState(false);
   const [selectedCharacter, setSelectedCharacter] = useState<Character | null>(null);
   const [isGeneratingAvatars, setIsGeneratingAvatars] = useState(false);
-  
+  const [streamingText, setStreamingText] = useState<string | null>(null);
+
   const [isAutoOn, setIsAutoOn] = useState(false);
   const autoCountRef = useRef(0);
   const autoTimeoutRef = useRef<number | null>(null);
 
-  const audioContext = useRef<AudioContext | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const host = useRef(new GeminiHost());
+  const host = useRef(new OpenRouterHost());
 
   useEffect(() => {
     if (gameState.messages.length === 0) handleInitialPrompt();
@@ -100,6 +87,10 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     autoSave();
   }, [gameState.messages, gameState.characters]);
+
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [streamingText]);
 
   // Character Profile Generation Loop
   useEffect(() => {
@@ -140,10 +131,16 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
 
   const handleInitialPrompt = async () => {
     setIsTyping(true);
+    setStreamingText('');
     try {
-      const response = await host.current.getResponse(gameState, `Initialize the game for the cycle: ${gameState.title}. Reveal the full cast and assign Titles.`);
-      await processResponse(response);
-    } catch (err) { console.error(err); }
+      const fullResponse = await host.current.getResponseStream(
+        gameState,
+        `Initialize the game for the cycle: ${gameState.title}. Reveal the full cast and assign Titles.`,
+        (chunk) => setStreamingText(prev => (prev ?? '') + chunk),
+      );
+      setStreamingText(null);
+      await processResponse(fullResponse);
+    } catch (err) { console.error(err); setStreamingText(null); }
     finally { setIsTyping(false); }
   };
 
@@ -159,17 +156,9 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
     setIsGeneratingAvatars(false);
   };
 
-  const speakText = async (text: string) => {
+  const speakText = (text: string) => {
     if (isMuted) return;
-    const audioData = await host.current.speak(text);
-    if (audioData) {
-      if (!audioContext.current) audioContext.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
-      const buffer = await decodeAudioData(audioData, audioContext.current, 24000, 1);
-      const source = audioContext.current.createBufferSource();
-      source.buffer = buffer;
-      source.connect(audioContext.current.destination);
-      source.start();
-    }
+    host.current.speak(text);
   };
 
   const processResponse = async (response: string) => {
@@ -226,14 +215,20 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
     if (customValue === undefined) {
       setGameState(prev => ({ ...prev, messages: [...prev.messages, { role: 'user', content: value }] }));
       setInputValue('');
-      autoCountRef.current = 0; // Reset auto count on manual input
+      autoCountRef.current = 0;
     }
 
     setIsTyping(true);
+    setStreamingText('');
     try {
-      const response = await host.current.getResponse(gameState, value || "Continue the story.");
-      await processResponse(response);
-    } catch (err) { console.error(err); }
+      const fullResponse = await host.current.getResponseStream(
+        gameState,
+        value || "Continue the story.",
+        (chunk) => setStreamingText(prev => (prev ?? '') + chunk),
+      );
+      setStreamingText(null);
+      await processResponse(fullResponse);
+    } catch (err) { console.error(err); setStreamingText(null); }
     finally { setIsTyping(false); }
   };
 
@@ -306,7 +301,18 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
               </div>
             </div>
           ))}
-          {isTyping && (
+          {streamingText !== null && (
+            <div className="flex justify-start animate-in fade-in slide-in-from-bottom-2">
+              <div className="max-w-[90%] lg:max-w-[85%] rounded-2xl p-5 bg-dr-dark border border-white/10 rounded-tl-none border-l-4 border-l-dr-pink">
+                <div className="text-dr-pink font-black text-[10px] mb-2 uppercase tracking-[0.2em]">{gameState.hostName}</div>
+                <div className="whitespace-pre-wrap leading-relaxed text-sm lg:text-base font-medium">
+                  {streamingText.replace(/<CHARACTER_UPDATE>[\s\S]*?<\/CHARACTER_UPDATE>/g, '').trimEnd()}
+                  <span className="inline-block w-[2px] h-[1em] bg-dr-pink align-middle ml-0.5 animate-pulse" />
+                </div>
+              </div>
+            </div>
+          )}
+          {isTyping && streamingText === null && (
             <div className="flex justify-start">
               <div className="bg-dr-dark border border-white/10 rounded-2xl rounded-tl-none p-5 flex gap-2">
                 <div className="w-2 h-2 bg-dr-pink rounded-full animate-bounce"></div>
