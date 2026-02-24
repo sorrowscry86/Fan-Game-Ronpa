@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { GameState, GamePhase, ChatMessage, Character, GameMode, MatchHistory } from '../types';
 import { OpenRouterHost } from '../openrouterService';
 
@@ -81,7 +81,7 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
   const [selectedCharacter, setSelectedCharacter] = useState<Character | null>(null);
   const [isGeneratingAvatars, setIsGeneratingAvatars] = useState(false);
   const [streamingText, setStreamingText] = useState<string | null>(null);
-  const [, setSaveStateVersion] = useState(0);
+  const [saveStateVersion, setSaveStateVersion] = useState(0);
   const galleryRef = useRef<Character[]>([]);
   const galleryLoadedRef = useRef(false);
   const savedIdsRef = useRef<Set<string>>(new Set());
@@ -125,11 +125,11 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
     return true;
   };
 
-  const isCharacterSaved = (character: Character | null) => {
+  const isCharacterSaved = useCallback((character: Character | null) => {
     if (!character) return false;
     ensureGalleryLoaded();
     return savedIdsRef.current.has(character.id);
-  };
+  }, [saveStateVersion]);
 
   useEffect(() => {
     if (gameState.messages.length === 0) handleInitialPrompt();
@@ -241,14 +241,15 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
           // Update persistent gallery too
           ensureGalleryLoaded();
           const gallery: Character[] = [...galleryRef.current];
+          const galleryMap = new Map(gallery.map((g) => [g.id, g]));
           updatedCharacters.forEach((uc) => {
-            const idx = gallery.findIndex((g) => g.id === uc.id);
-            if (idx > -1) gallery[idx] = { ...gallery[idx], ...uc, history: gallery[idx].history || [] };
-            else gallery.push({ ...uc, history: [] });
+            const existing = galleryMap.get(uc.id);
+            galleryMap.set(uc.id, { ...(existing || uc), ...uc, history: existing?.history || [] });
             savedIdsRef.current.add(uc.id);
           });
-          localStorage.setItem('dr_gallery', JSON.stringify(gallery));
-          galleryRef.current = gallery;
+          const updatedGallery = Array.from(galleryMap.values());
+          localStorage.setItem('dr_gallery', JSON.stringify(updatedGallery));
+          galleryRef.current = updatedGallery;
         }
       } catch (e) { console.error("Failed to parse character update", e); }
     }
