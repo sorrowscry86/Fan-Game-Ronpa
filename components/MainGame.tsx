@@ -8,11 +8,11 @@ interface MainGameProps {
   onRestart: () => void;
 }
 
-const CharacterModal: React.FC<{ character: Character; onClose: () => void }> = ({ character, onClose }) => {
+const CharacterModal: React.FC<{ character: Character; onClose: () => void; onSave?: (character: Character) => void; isSaved?: boolean }> = ({ character, onClose, onSave, isSaved }) => {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-300" onClick={onClose}>
       <div className="relative w-full max-w-lg bg-dr-card border-2 border-dr-pink rounded-2xl overflow-hidden shadow-[0_0_50px_rgba(255,0,127,0.4)] animate-in zoom-in slide-in-from-bottom-8 duration-300" onClick={e => e.stopPropagation()}>
-        <div className="bg-dr-pink p-6 text-white flex gap-4">
+        <div className="bg-dr-pink p-6 text-white flex gap-4 items-start">
           <div className="shrink-0 w-24 h-24 bg-dr-dark rounded-xl border-2 border-white/20 overflow-hidden shadow-lg relative">
             {character.avatarUrl ? (
               <img src={character.avatarUrl} alt={character.name} className="w-full h-full object-cover" />
@@ -38,6 +38,14 @@ const CharacterModal: React.FC<{ character: Character; onClose: () => void }> = 
             <h2 className="text-3xl font-black italic uppercase leading-none mb-1 truncate">{character.name}</h2>
             <div className="text-sm font-bold uppercase tracking-widest truncate">{character.ultimateTitle || 'Ultimate ???'}</div>
           </div>
+          {onSave && (
+            <button
+              onClick={() => onSave(character)}
+              className={`ml-2 px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-[0.2em] border-2 transition-all ${isSaved ? 'bg-white text-dr-pink border-white' : 'bg-dr-dark/40 text-white border-white/40 hover:bg-white hover:text-dr-pink'}`}
+            >
+              {isSaved ? 'Saved' : 'Save Profile'}
+            </button>
+          )}
         </div>
         <div className="p-6 space-y-6">
           <div className="grid grid-cols-2 gap-4">
@@ -77,6 +85,31 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const host = useRef(new OpenRouterHost());
+
+  const readGallery = (): Character[] => {
+    try {
+      return JSON.parse(localStorage.getItem('dr_gallery') || '[]');
+    } catch {
+      return [];
+    }
+  };
+
+  const persistGalleryCharacter = (character: Character, onlyIfExists = false): boolean => {
+    const gallery = readGallery();
+    const idx = gallery.findIndex((g) => g.name === character.name);
+    if (idx === -1 && onlyIfExists) return false;
+    const history = idx > -1 ? gallery[idx].history || [] : [];
+    const payload = { ...character, history };
+    if (idx > -1) gallery[idx] = payload;
+    else gallery.push(payload);
+    localStorage.setItem('dr_gallery', JSON.stringify(gallery));
+    return true;
+  };
+
+  const isCharacterSaved = (character: Character | null) => {
+    if (!character) return false;
+    return readGallery().some((g) => g.name === character.name);
+  };
 
   useEffect(() => {
     if (gameState.messages.length === 0) handleInitialPrompt();
@@ -148,6 +181,8 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
     setIsGeneratingAvatars(true);
     const url = await host.current.generateAvatar(character);
     if (url) {
+      const withAvatar = { ...character, avatarUrl: url };
+      persistGalleryCharacter(withAvatar, true);
       setGameState(prev => ({
         ...prev,
         characters: prev.characters.map(c => c.id === character.id ? { ...c, avatarUrl: url } : c)
@@ -234,6 +269,11 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
 
   const handleContinue = () => {
     handleSubmit(undefined, "Continue the story.");
+  };
+
+  const handleSaveCharacterProfile = (character: Character) => {
+    persistGalleryCharacter(character);
+    setSelectedCharacter({ ...character });
   };
 
   return (
@@ -349,7 +389,14 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
           </form>
         </div>
       </div>
-      {selectedCharacter && <CharacterModal character={selectedCharacter} onClose={() => setSelectedCharacter(null)} />}
+      {selectedCharacter && (
+        <CharacterModal 
+          character={selectedCharacter} 
+          onClose={() => setSelectedCharacter(null)} 
+          onSave={handleSaveCharacterProfile}
+          isSaved={isCharacterSaved(selectedCharacter)}
+        />
+      )}
     </div>
   );
 };
