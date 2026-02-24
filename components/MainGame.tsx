@@ -40,7 +40,7 @@ const CharacterModal: React.FC<{ character: Character; onClose: () => void; onSa
           </div>
           {onSave && (
             <button
-              onClick={() => onSave(character)}
+              onClick={isSaved ? undefined : () => onSave(character)}
               disabled={isSaved}
               aria-disabled={isSaved}
               aria-label={isSaved ? 'Profile saved to archive' : 'Save profile to archive'}
@@ -127,7 +127,6 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
 
   const isCharacterSaved = (character: Character | null) => {
     if (!character) return false;
-    saveVersion; // dependency to trigger re-render when saves occur
     ensureGalleryLoaded();
     return savedIdsRef.current.has(character.id);
   };
