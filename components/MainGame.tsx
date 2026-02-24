@@ -41,9 +41,10 @@ const CharacterModal: React.FC<{ character: Character; onClose: () => void; onSa
           {onSave && (
             <button
               onClick={() => onSave(character)}
-              aria-pressed={isSaved}
+              disabled={isSaved}
+              aria-disabled={isSaved}
               aria-label={isSaved ? 'Profile saved to archive' : 'Save profile to archive'}
-              className={`ml-2 px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-[0.2em] border-2 transition-all ${isSaved ? 'bg-white text-dr-pink border-white' : 'bg-dr-dark/40 text-white border-white/40 hover:bg-white hover:text-dr-pink'}`}
+              className={`ml-2 px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-[0.2em] border-2 transition-all ${isSaved ? 'bg-white text-dr-pink border-white cursor-default' : 'bg-dr-dark/40 text-white border-white/40 hover:bg-white hover:text-dr-pink'}`}
             >
               {isSaved ? '✓ Saved' : 'Save Profile'}
             </button>
@@ -82,6 +83,8 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
   const [streamingText, setStreamingText] = useState<string | null>(null);
   const [lastSavedId, setLastSavedId] = useState<string | null>(null);
   const galleryRef = useRef<Character[]>([]);
+  const galleryLoadedRef = useRef(false);
+  const savedIdsRef = useRef<Set<string>>(new Set());
 
   const [isAutoOn, setIsAutoOn] = useState(false);
   const autoCountRef = useRef(0);
@@ -98,7 +101,16 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
     }
   };
 
+  const ensureGalleryLoaded = () => {
+    if (galleryLoadedRef.current) return;
+    const gallery = readGallery();
+    galleryRef.current = gallery;
+    savedIdsRef.current = new Set(gallery.map((g) => g.id));
+    galleryLoadedRef.current = true;
+  };
+
   const persistGalleryCharacter = (character: Character, options?: { onlyIfExists?: boolean }): boolean => {
+    ensureGalleryLoaded();
     const onlyIfExists = options?.onlyIfExists ?? false;
     const gallery = [...galleryRef.current];
     const idx = gallery.findIndex((g) => g.id === character.id);
@@ -109,16 +121,19 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
     else gallery.push(payload);
     localStorage.setItem('dr_gallery', JSON.stringify(gallery));
     galleryRef.current = gallery;
+    savedIdsRef.current.add(character.id);
+    galleryLoadedRef.current = true;
     return true;
   };
 
   const isCharacterSaved = (character: Character | null) => {
     if (!character) return false;
-    return lastSavedId === character.id || galleryRef.current.some((g) => g.id === character.id);
+    if (lastSavedId === character.id) return true;
+    ensureGalleryLoaded();
+    return savedIdsRef.current.has(character.id);
   };
 
   useEffect(() => {
-    galleryRef.current = readGallery();
     if (gameState.messages.length === 0) handleInitialPrompt();
     return () => { if (autoTimeoutRef.current) window.clearTimeout(autoTimeoutRef.current); };
   }, []);
@@ -226,7 +241,8 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
             return ex?.avatarUrl ? { ...nc, avatarUrl: ex.avatarUrl } : nc;
           });
           // Update persistent gallery too
-          const gallery: Character[] = galleryRef.current.length ? [...galleryRef.current] : readGallery();
+          ensureGalleryLoaded();
+          const gallery: Character[] = [...galleryRef.current];
           updatedCharacters.forEach(uc => {
             const idx = gallery.findIndex((g: Character) => g.id === uc.id);
             if (idx > -1) gallery[idx] = { ...gallery[idx], ...uc, history: gallery[idx].history || [] };
@@ -234,6 +250,7 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
           });
           localStorage.setItem('dr_gallery', JSON.stringify(gallery));
           galleryRef.current = gallery;
+          savedIdsRef.current = new Set(gallery.map((g) => g.id));
         }
       } catch (e) { console.error("Failed to parse character update", e); }
     }
