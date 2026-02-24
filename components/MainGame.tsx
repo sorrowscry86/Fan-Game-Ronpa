@@ -81,7 +81,7 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
   const [selectedCharacter, setSelectedCharacter] = useState<Character | null>(null);
   const [isGeneratingAvatars, setIsGeneratingAvatars] = useState(false);
   const [streamingText, setStreamingText] = useState<string | null>(null);
-  const [lastSavedId, setLastSavedId] = useState<string | null>(null);
+  const [saveVersion, setSaveVersion] = useState(0);
   const galleryRef = useRef<Character[]>([]);
   const galleryLoadedRef = useRef(false);
   const savedIdsRef = useRef<Set<string>>(new Set());
@@ -122,13 +122,12 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
     localStorage.setItem('dr_gallery', JSON.stringify(gallery));
     galleryRef.current = gallery;
     savedIdsRef.current.add(character.id);
-    galleryLoadedRef.current = true;
     return true;
   };
 
   const isCharacterSaved = (character: Character | null) => {
     if (!character) return false;
-    if (lastSavedId === character.id) return true;
+    saveVersion; // dependency to trigger re-render when saves occur
     ensureGalleryLoaded();
     return savedIdsRef.current.has(character.id);
   };
@@ -243,15 +242,14 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
           // Update persistent gallery too
           ensureGalleryLoaded();
           const gallery: Character[] = [...galleryRef.current];
-          const galleryMap = new Map(gallery.map((g) => [g.id, g]));
           updatedCharacters.forEach((uc) => {
-            const existing = galleryMap.get(uc.id);
-            galleryMap.set(uc.id, { ...(existing || uc), ...uc, history: existing?.history || [] });
+            const idx = gallery.findIndex((g) => g.id === uc.id);
+            if (idx > -1) gallery[idx] = { ...gallery[idx], ...uc, history: gallery[idx].history || [] };
+            else gallery.push({ ...uc, history: [] });
             savedIdsRef.current.add(uc.id);
           });
-          const updatedGallery = Array.from(galleryMap.values());
-          localStorage.setItem('dr_gallery', JSON.stringify(updatedGallery));
-          galleryRef.current = updatedGallery;
+          localStorage.setItem('dr_gallery', JSON.stringify(gallery));
+          galleryRef.current = gallery;
         }
       } catch (e) { console.error("Failed to parse character update", e); }
     }
@@ -299,7 +297,7 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
 
   const handleSaveCharacterProfile = (character: Character) => {
     persistGalleryCharacter(character);
-    setLastSavedId(character.id);
+    setSaveVersion(v => v + 1);
   };
 
   return (
