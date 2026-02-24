@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { GameState, GamePhase, ChatMessage, Character, GameMode, MatchHistory } from '../types';
 import { OpenRouterHost } from '../openrouterService';
 
@@ -9,6 +9,10 @@ interface MainGameProps {
 }
 
 const CharacterModal: React.FC<{ character: Character; onClose: () => void; onSave?: (character: Character) => void; isSaved?: boolean }> = ({ character, onClose, onSave, isSaved }) => {
+  const saveButtonClasses = isSaved
+    ? 'bg-white text-dr-pink border-white cursor-not-allowed'
+    : 'bg-dr-dark/40 text-white border-white/40 hover:bg-white hover:text-dr-pink';
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-300" onClick={onClose}>
       <div className="relative w-full max-w-lg bg-dr-card border-2 border-dr-pink rounded-2xl overflow-hidden shadow-[0_0_50px_rgba(255,0,127,0.4)] animate-in zoom-in slide-in-from-bottom-8 duration-300" onClick={e => e.stopPropagation()}>
@@ -43,7 +47,7 @@ const CharacterModal: React.FC<{ character: Character; onClose: () => void; onSa
               disabled={isSaved}
               aria-disabled={isSaved}
               aria-label={isSaved ? 'Profile saved to archive' : 'Save profile to archive'}
-              className={`ml-2 px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-[0.2em] border-2 transition-all ${isSaved ? 'bg-white text-dr-pink border-white cursor-not-allowed' : 'bg-dr-dark/40 text-white border-white/40 hover:bg-white hover:text-dr-pink'}`}
+              className={`ml-2 px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-[0.2em] border-2 transition-all ${saveButtonClasses}`}
               {...(!isSaved && { onClick: () => onSave(character) })}
             >
               {isSaved ? '✓ Saved' : 'Save Profile'}
@@ -81,10 +85,9 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
   const [selectedCharacter, setSelectedCharacter] = useState<Character | null>(null);
   const [isGeneratingAvatars, setIsGeneratingAvatars] = useState(false);
   const [streamingText, setStreamingText] = useState<string | null>(null);
-  const [saveStateVersion, setSaveStateVersion] = useState(0);
+  const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
   const galleryRef = useRef<Character[]>([]);
   const galleryLoadedRef = useRef(false);
-  const savedIdsRef = useRef<Set<string>>(new Set());
 
   const [isAutoOn, setIsAutoOn] = useState(false);
   const autoCountRef = useRef(0);
@@ -105,7 +108,7 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
     if (galleryLoadedRef.current) return;
     const gallery = readGallery();
     galleryRef.current = gallery;
-    savedIdsRef.current = new Set(gallery.map((g) => g.id));
+    setSavedIds(new Set(gallery.map((g) => g.id)));
     galleryLoadedRef.current = true;
   };
 
@@ -121,15 +124,19 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
     else gallery.push(payload);
     localStorage.setItem('dr_gallery', JSON.stringify(gallery));
     galleryRef.current = gallery;
-    savedIdsRef.current.add(character.id);
+    setSavedIds(prev => {
+      const next = new Set(prev);
+      next.add(character.id);
+      return next;
+    });
     return true;
   };
 
-  const isCharacterSaved = useCallback((character: Character | null) => {
+  const isCharacterSaved = (character: Character | null) => {
     if (!character) return false;
     ensureGalleryLoaded();
-    return savedIdsRef.current.has(character.id);
-  }, [saveStateVersion]);
+    return savedIds.has(character.id);
+  };
 
   useEffect(() => {
     if (gameState.messages.length === 0) handleInitialPrompt();
@@ -245,7 +252,11 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
           updatedCharacters.forEach((uc) => {
             const existing = galleryMap.get(uc.id);
             galleryMap.set(uc.id, { ...(existing || uc), ...uc, history: existing?.history || [] });
-            savedIdsRef.current.add(uc.id);
+            setSavedIds(prev => {
+              const next = new Set(prev);
+              next.add(uc.id);
+              return next;
+            });
           });
           const updatedGallery = Array.from(galleryMap.values());
           localStorage.setItem('dr_gallery', JSON.stringify(updatedGallery));
@@ -297,7 +308,6 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
 
   const handleSaveCharacterProfile = (character: Character) => {
     persistGalleryCharacter(character);
-    setSaveStateVersion(v => v + 1);
   };
 
   return (
