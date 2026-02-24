@@ -81,6 +81,7 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
   const [isGeneratingAvatars, setIsGeneratingAvatars] = useState(false);
   const [streamingText, setStreamingText] = useState<string | null>(null);
   const [lastSavedId, setLastSavedId] = useState<string | null>(null);
+  const galleryRef = useRef<Character[]>([]);
 
   const [isAutoOn, setIsAutoOn] = useState(false);
   const autoCountRef = useRef(0);
@@ -99,23 +100,25 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
 
   const persistGalleryCharacter = (character: Character, options?: { onlyIfExists?: boolean }): boolean => {
     const onlyIfExists = options?.onlyIfExists ?? false;
-    const gallery = readGallery();
-    const idx = gallery.findIndex((g) => g.id === character.id || g.name === character.name);
+    const gallery = [...galleryRef.current];
+    const idx = gallery.findIndex((g) => g.id === character.id);
     if (idx === -1 && onlyIfExists) return false;
     const history = idx > -1 ? gallery[idx].history || [] : [];
     const payload = { ...character, history };
     if (idx > -1) gallery[idx] = payload;
     else gallery.push(payload);
     localStorage.setItem('dr_gallery', JSON.stringify(gallery));
+    galleryRef.current = gallery;
     return true;
   };
 
   const isCharacterSaved = (character: Character | null) => {
     if (!character) return false;
-    return lastSavedId === character.id || readGallery().some((g) => g.id === character.id || g.name === character.name);
+    return lastSavedId === character.id || galleryRef.current.some((g) => g.id === character.id);
   };
 
   useEffect(() => {
+    galleryRef.current = readGallery();
     if (gameState.messages.length === 0) handleInitialPrompt();
     return () => { if (autoTimeoutRef.current) window.clearTimeout(autoTimeoutRef.current); };
   }, []);
@@ -223,13 +226,14 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
             return ex?.avatarUrl ? { ...nc, avatarUrl: ex.avatarUrl } : nc;
           });
           // Update persistent gallery too
-          const gallery = JSON.parse(localStorage.getItem('dr_gallery') || '[]');
+          const gallery = galleryRef.current.length ? [...galleryRef.current] : readGallery();
           updatedCharacters.forEach(uc => {
-            const idx = gallery.findIndex((g: any) => g.name === uc.name);
+            const idx = gallery.findIndex((g: any) => g.id === uc.id);
             if (idx > -1) gallery[idx] = { ...gallery[idx], ...uc, history: gallery[idx].history || [] };
             else gallery.push({ ...uc, history: [] });
           });
           localStorage.setItem('dr_gallery', JSON.stringify(gallery));
+          galleryRef.current = gallery;
         }
       } catch (e) { console.error("Failed to parse character update", e); }
     }
