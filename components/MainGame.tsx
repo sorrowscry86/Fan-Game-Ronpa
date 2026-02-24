@@ -48,7 +48,7 @@ const CharacterModal: React.FC<{ character: Character; onClose: () => void; onSa
               aria-disabled={isSaved}
               aria-label={isSaved ? 'Profile saved to archive' : 'Save profile to archive'}
               className={`ml-2 px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-[0.2em] border-2 transition-all ${saveButtonClasses}`}
-              {...(!isSaved && { onClick: () => onSave(character) })}
+              onClick={!isSaved ? () => onSave(character) : undefined}
             >
               {isSaved ? '✓ Saved' : 'Save Profile'}
             </button>
@@ -144,10 +144,10 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
   const persistGalleryCharacter = (character: Character, options?: { allowInsert?: boolean }): boolean => {
     ensureGalleryLoaded();
     const allowInsert = options?.allowInsert ?? true;
-    const gallery = upsertGalleryEntry([...galleryRef.current], character, allowInsert);
-    if (!gallery) return false;
-    writeGallery(gallery.gallery);
-    if (gallery.added) bumpSavedIds([character.id]);
+    const upsertResult = upsertGalleryEntry([...galleryRef.current], character, allowInsert);
+    if (!upsertResult) return false;
+    writeGallery(upsertResult.gallery);
+    if (upsertResult.added) bumpSavedIds([character.id]);
     return true;
   };
 
@@ -229,7 +229,7 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
     if (url) {
       const withAvatar = { ...character, avatarUrl: url };
       const persisted = persistGalleryCharacter(withAvatar, { allowInsert: false });
-      if (!persisted) console.warn('Avatar generated but gallery entry missing for', character.id);
+      if (!persisted) console.warn('Avatar generated but gallery entry not updated for', character.id);
       setGameState(prev => ({
         ...prev,
         characters: prev.characters.map(c => c.id === character.id ? { ...c, avatarUrl: url } : c)
