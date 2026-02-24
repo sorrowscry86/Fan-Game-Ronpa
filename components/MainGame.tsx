@@ -40,11 +40,11 @@ const CharacterModal: React.FC<{ character: Character; onClose: () => void; onSa
           </div>
           {onSave && (
             <button
-              onClick={isSaved ? undefined : () => onSave(character)}
               disabled={isSaved}
               aria-disabled={isSaved}
               aria-label={isSaved ? 'Profile saved to archive' : 'Save profile to archive'}
               className={`ml-2 px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-[0.2em] border-2 transition-all ${isSaved ? 'bg-white text-dr-pink border-white cursor-not-allowed' : 'bg-dr-dark/40 text-white border-white/40 hover:bg-white hover:text-dr-pink'}`}
+              {...(!isSaved && { onClick: () => onSave(character) })}
             >
               {isSaved ? '✓ Saved' : 'Save Profile'}
             </button>
@@ -81,7 +81,7 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
   const [selectedCharacter, setSelectedCharacter] = useState<Character | null>(null);
   const [isGeneratingAvatars, setIsGeneratingAvatars] = useState(false);
   const [streamingText, setStreamingText] = useState<string | null>(null);
-  const [saveVersion, setSaveVersion] = useState(0);
+  const [, setSaveStateVersion] = useState(0);
   const galleryRef = useRef<Character[]>([]);
   const galleryLoadedRef = useRef(false);
   const savedIdsRef = useRef<Set<string>>(new Set());
@@ -109,12 +109,12 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
     galleryLoadedRef.current = true;
   };
 
-  const persistGalleryCharacter = (character: Character, options?: { onlyIfExists?: boolean }): boolean => {
+  const persistGalleryCharacter = (character: Character, options?: { updateOnly?: boolean }): boolean => {
     ensureGalleryLoaded();
-    const onlyIfExists = options?.onlyIfExists ?? false;
+    const updateOnly = options?.updateOnly ?? false;
     const gallery = [...galleryRef.current];
     const idx = gallery.findIndex((g) => g.id === character.id);
-    if (idx === -1 && onlyIfExists) return false;
+    if (idx === -1 && updateOnly) return false;
     const history = idx > -1 ? gallery[idx].history || [] : [];
     const payload = { ...character, history };
     if (idx > -1) gallery[idx] = payload;
@@ -202,7 +202,7 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
     const url = await host.current.generateAvatar(character);
     if (url) {
       const withAvatar = { ...character, avatarUrl: url };
-      persistGalleryCharacter(withAvatar, { onlyIfExists: true });
+      persistGalleryCharacter(withAvatar, { updateOnly: true });
       setGameState(prev => ({
         ...prev,
         characters: prev.characters.map(c => c.id === character.id ? { ...c, avatarUrl: url } : c)
@@ -296,7 +296,7 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
 
   const handleSaveCharacterProfile = (character: Character) => {
     persistGalleryCharacter(character);
-    setSaveVersion(v => v + 1);
+    setSaveStateVersion(v => v + 1);
   };
 
   return (
