@@ -41,6 +41,8 @@ const CharacterModal: React.FC<{ character: Character; onClose: () => void; onSa
           {onSave && (
             <button
               onClick={() => onSave(character)}
+              aria-pressed={isSaved}
+              aria-label={isSaved ? 'Profile saved to archive' : 'Save profile to archive'}
               className={`ml-2 px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-[0.2em] border-2 transition-all ${isSaved ? 'bg-white text-dr-pink border-white' : 'bg-dr-dark/40 text-white border-white/40 hover:bg-white hover:text-dr-pink'}`}
             >
               {isSaved ? 'Saved' : 'Save Profile'}
@@ -78,6 +80,7 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
   const [selectedCharacter, setSelectedCharacter] = useState<Character | null>(null);
   const [isGeneratingAvatars, setIsGeneratingAvatars] = useState(false);
   const [streamingText, setStreamingText] = useState<string | null>(null);
+  const [lastSavedId, setLastSavedId] = useState<string | null>(null);
 
   const [isAutoOn, setIsAutoOn] = useState(false);
   const autoCountRef = useRef(0);
@@ -108,7 +111,7 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
 
   const isCharacterSaved = (character: Character | null) => {
     if (!character) return false;
-    return readGallery().some((g) => g.name === character.name);
+    return lastSavedId === character.id || readGallery().some((g) => g.name === character.name);
   };
 
   useEffect(() => {
@@ -273,7 +276,7 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
 
   const handleSaveCharacterProfile = (character: Character) => {
     persistGalleryCharacter(character);
-    setSelectedCharacter({ ...character });
+    setLastSavedId(character.id);
   };
 
   return (
