@@ -8,11 +8,15 @@ interface MainGameProps {
   onRestart: () => void;
 }
 
-const CharacterModal: React.FC<{ character: Character; onClose: () => void }> = ({ character, onClose }) => {
+const CharacterModal: React.FC<{ character: Character; onClose: () => void; onSave?: (character: Character) => void; isSaved?: boolean }> = ({ character, onClose, onSave, isSaved }) => {
+  const saveButtonClasses = isSaved
+    ? 'bg-white text-dr-pink border-white cursor-not-allowed'
+    : 'bg-dr-dark/40 text-white border-white/40 hover:bg-white hover:text-dr-pink';
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-300" onClick={onClose}>
       <div className="relative w-full max-w-lg bg-dr-card border-2 border-dr-pink rounded-2xl overflow-hidden shadow-[0_0_50px_rgba(255,0,127,0.4)] animate-in zoom-in slide-in-from-bottom-8 duration-300" onClick={e => e.stopPropagation()}>
-        <div className="bg-dr-pink p-6 text-white flex gap-4">
+        <div className="bg-dr-pink p-6 text-white flex gap-4 items-start">
           <div className="shrink-0 w-24 h-24 bg-dr-dark rounded-xl border-2 border-white/20 overflow-hidden shadow-lg relative">
             {character.avatarUrl ? (
               <img src={character.avatarUrl} alt={character.name} className="w-full h-full object-cover" />
@@ -38,6 +42,17 @@ const CharacterModal: React.FC<{ character: Character; onClose: () => void }> = 
             <h2 className="text-3xl font-black italic uppercase leading-none mb-1 truncate">{character.name}</h2>
             <div className="text-sm font-bold uppercase tracking-widest truncate">{character.ultimateTitle || 'Ultimate ???'}</div>
           </div>
+          {onSave && (
+            <button
+              disabled={isSaved}
+              aria-disabled={isSaved}
+              aria-label={isSaved ? 'Profile saved to archive' : 'Save profile to archive'}
+              className={`ml-2 px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-[0.2em] border-2 transition-all ${saveButtonClasses}`}
+              onClick={!isSaved ? () => onSave(character) : undefined}
+            >
+              {isSaved ? '✓ Saved' : 'Save Profile'}
+            </button>
+          )}
         </div>
         <div className="p-6 space-y-6">
           <div className="grid grid-cols-2 gap-4">
@@ -70,6 +85,9 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
   const [selectedCharacter, setSelectedCharacter] = useState<Character | null>(null);
   const [isGeneratingAvatars, setIsGeneratingAvatars] = useState(false);
   const [streamingText, setStreamingText] = useState<string | null>(null);
+  const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
+  const galleryRef = useRef<Character[]>([]);
+  const galleryLoadedRef = useRef(false);
 
   const [isAutoOn, setIsAutoOn] = useState(false);
   const autoCountRef = useRef(0);
@@ -77,6 +95,67 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const host = useRef(new OpenRouterHost());
+
+  const readGallery = (): Character[] => {
+    try {
+      return JSON.parse(localStorage.getItem('dr_gallery') || '[]');
+    } catch (err) {
+      console.error('Failed to read gallery from storage', err);
+      return [];
+    }
+  };
+
+  const ensureGalleryLoaded = () => {
+    if (galleryLoadedRef.current) return;
+    const gallery = readGallery();
+    galleryRef.current = gallery;
+    setSavedIds(new Set(gallery.map((g) => g.id)));
+    galleryLoadedRef.current = true;
+  };
+
+  const writeGallery = (gallery: Character[]) => {
+    localStorage.setItem('dr_gallery', JSON.stringify(gallery));
+    galleryRef.current = gallery;
+  };
+
+  const bumpSavedIds = (ids: Iterable<string>) => {
+    setSavedIds(prev => {
+      const next = new Set(prev);
+      for (const id of ids) next.add(id);
+      return next;
+    });
+  };
+
+  const upsertGalleryEntry = (
+    gallery: Character[],
+    character: Character,
+    allowInsert: boolean
+  ): { gallery: Character[]; added: boolean } | null => {
+    const idx = gallery.findIndex((g) => g.id === character.id);
+    if (idx === -1 && !allowInsert) return null;
+    const history = idx > -1 ? gallery[idx].history || [] : [];
+    const payload = { ...character, history };
+    if (idx > -1) {
+      return { gallery: gallery.map((g, i) => (i === idx ? payload : g)), added: false };
+    }
+    return { gallery: [...gallery, payload], added: true };
+  };
+
+  const persistGalleryCharacter = (character: Character, options?: { allowInsert?: boolean }): boolean => {
+    ensureGalleryLoaded();
+    const allowInsert = options?.allowInsert ?? true;
+    const upsertResult = upsertGalleryEntry([...galleryRef.current], character, allowInsert);
+    if (!upsertResult) return false;
+    writeGallery(upsertResult.gallery);
+    if (upsertResult.added) bumpSavedIds([character.id]);
+    return true;
+  };
+
+  const isCharacterSaved = (character: Character | null) => {
+    if (!character) return false;
+    ensureGalleryLoaded();
+    return savedIds.has(character.id);
+  };
 
   useEffect(() => {
     if (gameState.messages.length === 0) handleInitialPrompt();
@@ -148,6 +227,9 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
     setIsGeneratingAvatars(true);
     const url = await host.current.generateAvatar(character);
     if (url) {
+      const withAvatar = { ...character, avatarUrl: url };
+      const persisted = persistGalleryCharacter(withAvatar, { allowInsert: false });
+      if (!persisted) console.warn('Avatar generated but gallery entry not updated for', character.id);
       setGameState(prev => ({
         ...prev,
         characters: prev.characters.map(c => c.id === character.id ? { ...c, avatarUrl: url } : c)
@@ -184,13 +266,18 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
             return ex?.avatarUrl ? { ...nc, avatarUrl: ex.avatarUrl } : nc;
           });
           // Update persistent gallery too
-          const gallery = JSON.parse(localStorage.getItem('dr_gallery') || '[]');
-          updatedCharacters.forEach(uc => {
-            const idx = gallery.findIndex((g: any) => g.name === uc.name);
-            if (idx > -1) gallery[idx] = { ...gallery[idx], ...uc, history: gallery[idx].history || [] };
-            else gallery.push({ ...uc, history: [] });
+          ensureGalleryLoaded();
+          let gallery: Character[] = [...galleryRef.current];
+          const newIds: string[] = [];
+          updatedCharacters.forEach((uc) => {
+            const result = upsertGalleryEntry(gallery, uc, true);
+            if (result) {
+              gallery = result.gallery;
+              if (result.added) newIds.push(uc.id);
+            }
           });
-          localStorage.setItem('dr_gallery', JSON.stringify(gallery));
+          writeGallery(gallery);
+          if (newIds.length) bumpSavedIds(newIds);
         }
       } catch (e) { console.error("Failed to parse character update", e); }
     }
@@ -234,6 +321,10 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
 
   const handleContinue = () => {
     handleSubmit(undefined, "Continue the story.");
+  };
+
+  const handleSaveCharacterProfile = (character: Character) => {
+    persistGalleryCharacter(character);
   };
 
   return (
@@ -349,7 +440,14 @@ const MainGame: React.FC<MainGameProps> = ({ initialState, onRestart }) => {
           </form>
         </div>
       </div>
-      {selectedCharacter && <CharacterModal character={selectedCharacter} onClose={() => setSelectedCharacter(null)} />}
+      {selectedCharacter && (
+        <CharacterModal 
+          character={selectedCharacter} 
+          onClose={() => setSelectedCharacter(null)} 
+          onSave={handleSaveCharacterProfile}
+          isSaved={isCharacterSaved(selectedCharacter)}
+        />
+      )}
     </div>
   );
 };
